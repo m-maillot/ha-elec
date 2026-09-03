@@ -1,0 +1,17 @@
+services:
+  ha-elec:
+    build: .
+    image: ha-elec:local
+    container_name: ha-elec
+    restart: unless-stopped
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      # Secret de chiffrement des jetons HA / RTE (obligatoire, chaîne longue et aléatoire).
+      APP_SECRET: ${APP_SECRET:?APP_SECRET manquant, voir .env.example}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - ha-elec-data:/data
+
+volumes:
+  ha-elec-data:
