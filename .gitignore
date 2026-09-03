@@ -1,0 +1,28 @@
+# macOS / AppleDouble
+._*
+.DS_Store
+
+# Dépendances et builds
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Environnement et données locales
+.env
+.env.*
+!.env.example
+data/
+*.sqlite
+*.sqlite-journal
+*.db
+
+# Playwright
+test-results/
+playwright-report/
+
+# Éditeurs / logs
+.vscode/
+.idea/
+*.log
