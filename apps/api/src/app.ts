@@ -97,10 +97,20 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
   });
 
   app.post('/api/ha/test', async (request, reply) => {
-    const body = request.body as { url?: string; token?: string };
+    const body = request.body as {
+      url?: string;
+      token?: string;
+      hpEntityId?: string;
+      hcEntityId?: string;
+    };
     try {
-      if (!body.url || !body.token) throw new Error('URL et token Home Assistant requis');
-      return await testHaConnection(body.url, body.token);
+      if (!body.url || !body.token || !body.hpEntityId || !body.hcEntityId)
+        throw new Error('URL, token et les deux index Linky sont requis');
+      const result = await testHaConnection(body.url, body.token);
+      const ids = new Set(result.entities.map((entity) => entity.entityId));
+      if (!ids.has(body.hpEntityId) || !ids.has(body.hcEntityId))
+        throw new Error('Un ou plusieurs index Linky sont introuvables ou inéligibles');
+      return result;
     } catch (error) {
       return reply.code(502).send({
         error: error instanceof Error ? error.message : 'Connexion Home Assistant impossible',
@@ -164,6 +174,17 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       return reply.code(400).send({ error: 'Jours Tempo invalides' });
     database.upsertTempoDays(body.days.map((day) => ({ ...day, source: 'csv' })));
     return { imported: body.days.length };
+  });
+  app.post('/api/tempo/test', async (_request, reply) => {
+    try {
+      const rte = configuredRte();
+      const today = new Date().toISOString().slice(0, 10);
+      return { days: await fetchRteTempoDays(rte.clientId, rte.secret, today, today) };
+    } catch (error) {
+      return reply
+        .code(502)
+        .send({ error: error instanceof Error ? error.message : 'Connexion RTE impossible' });
+    }
   });
   app.post('/api/tempo/sync', async (request, reply) => {
     const query = request.query as { from?: string; to?: string };

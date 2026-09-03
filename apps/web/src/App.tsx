@@ -96,6 +96,30 @@ export function App() {
               />
             </label>
           </div>
+          <button
+            type="button"
+            className="mt-3 rounded border px-3 py-2"
+            onClick={async () => {
+              const response = await fetch('/api/ha/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url: form.haUrl,
+                  token: form.haToken,
+                  hpEntityId: form.hpEntityId,
+                  hcEntityId: form.hcEntityId,
+                }),
+              });
+              const body = (await response.json()) as { error?: string; version?: string };
+              window.alert(
+                response.ok
+                  ? `Connexion Home Assistant réussie`
+                  : (body.error ?? 'Connexion impossible'),
+              );
+            }}
+          >
+            Tester la connexion
+          </button>
         </section>
         <section className="rounded-lg border p-5">
           <h2 className="text-xl font-medium">Tarifs et puissance</h2>
@@ -192,6 +216,21 @@ export function App() {
                 <option value={6}>06:00</option>
               </select>
             </label>
+            <button
+              type="button"
+              className="mt-3 rounded border px-3 py-2"
+              onClick={async () => {
+                const response = await fetch('/api/tempo/test', { method: 'POST' });
+                const body = (await response.json()) as { error?: string; days?: unknown[] };
+                window.alert(
+                  response.ok
+                    ? 'Connexion RTE réussie'
+                    : (body.error ?? 'Connexion RTE impossible'),
+                );
+              }}
+            >
+              Tester RTE
+            </button>
           </div>
         </section>
         {mutation.isError && <p className="text-red-700">{mutation.error.message}</p>}
