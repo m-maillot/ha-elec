@@ -64,7 +64,7 @@ async function listEligibleEntities(connection: HaConnection): Promise<HaEntity[
 export async function fetchHourlyConsumption(
   url: string,
   token: string,
-  entityId: string,
+  entityIds: readonly string[],
   startTime: string,
   endTime: string,
 ): Promise<HaHour[]> {
@@ -73,25 +73,31 @@ export async function fetchHourlyConsumption(
       Record<string, Array<{ start: string; sum?: number; change?: number }>>
     >({
       type: 'recorder/statistics_during_period',
-      statistic_ids: [entityId],
+      statistic_ids: entityIds,
       start_time: startTime,
       end_time: endTime,
       period: 'hour',
       types: ['sum', 'change'],
     });
-    const buckets = response[entityId] ?? [];
-    return buckets.map((bucket, index) => {
-      const previous = buckets[index - 1];
-      const value =
-        bucket.change ??
-        (previous?.sum === undefined || bucket.sum === undefined
-          ? 0
-          : Math.max(0, bucket.sum - previous.sum));
-      return {
-        startUtc: new Date(bucket.start).toISOString(),
-        kwh: Math.max(0, value),
-        sourceSum: bucket.sum ?? null,
-      };
-    });
+    const totals = new Map<string, { kwh: number; sum: number }>();
+    for (const entityId of entityIds) {
+      const buckets = response[entityId] ?? [];
+      for (const [index, bucket] of buckets.entries()) {
+        const previous = buckets[index - 1];
+        const kwh =
+          bucket.change ??
+          (previous?.sum === undefined || bucket.sum === undefined
+            ? 0
+            : Math.max(0, bucket.sum - previous.sum));
+        const startUtc = new Date(bucket.start).toISOString();
+        const total = totals.get(startUtc) ?? { kwh: 0, sum: 0 };
+        total.kwh += Math.max(0, kwh);
+        total.sum += bucket.sum ?? 0;
+        totals.set(startUtc, total);
+      }
+    }
+    return [...totals]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([startUtc, total]) => ({ startUtc, kwh: total.kwh, sourceSum: total.sum }));
   });
 }

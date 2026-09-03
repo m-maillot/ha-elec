@@ -79,12 +79,12 @@ export function App() {
               />
             </label>
             <label>
-              Entité consommation
+              Index heures pleines
               <input
                 className={input}
-                value={(form.entityId as string) ?? ''}
-                placeholder="sensor.energy"
-                onChange={(e) => set('entityId', e.target.value)}
+                value={(form.hpEntityId as string) ?? ''}
+                placeholder="sensor.linky_hchp"
+                onChange={(e) => set('hpEntityId', e.target.value)}
               />
             </label>
             <label>
@@ -162,18 +162,7 @@ export function App() {
         <section className="rounded-lg border p-5">
           <h2 className="text-xl font-medium">Couleurs Tempo</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
-            <label>
-              Source
-              <select
-                className={input}
-                value={form.tempoSource as string}
-                onChange={(e) => set('tempoSource', e.target.value)}
-              >
-                <option value="rte">API officielle RTE</option>
-                <option value="ha">Entité Home Assistant</option>
-                <option value="csv">Import CSV</option>
-              </select>
-            </label>
+            <p className="text-sm text-slate-600">Source des couleurs : API officielle RTE.</p>
             <label>
               Client ID RTE
               <input

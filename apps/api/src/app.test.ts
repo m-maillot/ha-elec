@@ -48,7 +48,8 @@ describe('GET /api/health', () => {
       payload: {
         haUrl: 'http://ha.local:8123',
         haToken: 'un-secret',
-        entityId: 'sensor.energy',
+        hpEntityId: 'sensor.linky_hchp',
+        hcEntityId: 'sensor.linky_hchc',
         tariffs: {
           base: { pricePerKwh: 0.2, subscriptionYearly: 0 },
           hphc: { hpPricePerKwh: 0.22, hcPricePerKwh: 0.16, subscriptionYearly: 0 },

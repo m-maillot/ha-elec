@@ -6,11 +6,11 @@ import type { OffpeakRange, TariffGrid, TariffOption, TempoColor } from '@ha-ele
 export interface SettingsRecord {
   haUrl: string | null;
   haTokenEnc: string | null;
-  entityId: string | null;
-  tempoEntityId: string | null;
+  hpEntityId: string | null;
+  hcEntityId: string | null;
   subscribedPowerKva: number;
   currentOption: TariffOption;
-  tempoSource: 'rte' | 'ha' | 'csv';
+  tempoSource: 'rte';
   smoothingRefDays: number;
   smoothingSearchWindowDays: number;
   colorSwitchHour: number;
@@ -31,11 +31,11 @@ export interface HourRow {
 const defaults: SettingsRecord = {
   haUrl: null,
   haTokenEnc: null,
-  entityId: null,
-  tempoEntityId: null,
+  hpEntityId: null,
+  hcEntityId: null,
   subscribedPowerKva: 6,
   currentOption: 'base',
-  tempoSource: 'csv',
+  tempoSource: 'rte',
   smoothingRefDays: 3,
   smoothingSearchWindowDays: 14,
   colorSwitchHour: 6,
@@ -55,7 +55,12 @@ CREATE TABLE IF NOT EXISTS tariffs (option TEXT PRIMARY KEY, valid_from TEXT, su
 CREATE TABLE IF NOT EXISTS offpeak_ranges (id INTEGER PRIMARY KEY, tariff_set TEXT NOT NULL, start_min INTEGER NOT NULL, end_min INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS consumption_hours (start_utc TEXT PRIMARY KEY, kwh REAL NOT NULL, source_sum REAL, fetched_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tempo_days (date TEXT PRIMARY KEY, color TEXT NOT NULL, source TEXT NOT NULL, fetched_at TEXT NOT NULL);`);
-    for (const column of ['rte_client_id TEXT', 'rte_secret_enc TEXT']) {
+    for (const column of [
+      'rte_client_id TEXT',
+      'rte_secret_enc TEXT',
+      'hp_entity_id TEXT',
+      'hc_entity_id TEXT',
+    ]) {
       try {
         this.db.exec(`ALTER TABLE settings ADD COLUMN ${column}`);
       } catch {
@@ -71,7 +76,7 @@ CREATE TABLE IF NOT EXISTS tempo_days (date TEXT PRIMARY KEY, color TEXT NOT NUL
       ...defaults,
       ...(this.db
         .prepare(
-          `SELECT ha_url AS haUrl,ha_token_enc AS haTokenEnc,entity_id AS entityId,tempo_entity_id AS tempoEntityId,
+          `SELECT ha_url AS haUrl,ha_token_enc AS haTokenEnc,hp_entity_id AS hpEntityId,hc_entity_id AS hcEntityId,
           subscribed_power_kva AS subscribedPowerKva,tempo_source AS tempoSource,current_option AS currentOption,
           smoothing_ref_days AS smoothingRefDays,smoothing_search_window_days AS smoothingSearchWindowDays,
           color_switch_hour AS colorSwitchHour,rte_client_id AS rteClientId,rte_secret_enc AS rteSecretEnc FROM settings WHERE id=1`,
@@ -92,7 +97,7 @@ CREATE TABLE IF NOT EXISTS tempo_days (date TEXT PRIMARY KEY, color TEXT NOT NUL
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO settings (id,ha_url,ha_token_enc,entity_id,tempo_entity_id,subscribed_power_kva,tempo_source,current_option,smoothing_ref_days,smoothing_search_window_days,color_switch_hour,rte_client_id,rte_secret_enc,updated_at) VALUES (1,@haUrl,@haTokenEnc,@entityId,@tempoEntityId,@subscribedPowerKva,@tempoSource,@currentOption,@smoothingRefDays,@smoothingSearchWindowDays,@colorSwitchHour,@rteClientId,@rteSecretEnc,@now) ON CONFLICT(id) DO UPDATE SET ha_url=@haUrl,ha_token_enc=@haTokenEnc,entity_id=@entityId,tempo_entity_id=@tempoEntityId,subscribed_power_kva=@subscribedPowerKva,tempo_source=@tempoSource,current_option=@currentOption,smoothing_ref_days=@smoothingRefDays,smoothing_search_window_days=@smoothingSearchWindowDays,color_switch_hour=@colorSwitchHour,rte_client_id=@rteClientId,rte_secret_enc=@rteSecretEnc,updated_at=@now`,
+        `INSERT INTO settings (id,ha_url,ha_token_enc,hp_entity_id,hc_entity_id,subscribed_power_kva,tempo_source,current_option,smoothing_ref_days,smoothing_search_window_days,color_switch_hour,rte_client_id,rte_secret_enc,updated_at) VALUES (1,@haUrl,@haTokenEnc,@hpEntityId,@hcEntityId,@subscribedPowerKva,@tempoSource,@currentOption,@smoothingRefDays,@smoothingSearchWindowDays,@colorSwitchHour,@rteClientId,@rteSecretEnc,@now) ON CONFLICT(id) DO UPDATE SET ha_url=@haUrl,ha_token_enc=@haTokenEnc,hp_entity_id=@hpEntityId,hc_entity_id=@hcEntityId,subscribed_power_kva=@subscribedPowerKva,tempo_source=@tempoSource,current_option=@currentOption,smoothing_ref_days=@smoothingRefDays,smoothing_search_window_days=@smoothingSearchWindowDays,color_switch_hour=@colorSwitchHour,rte_client_id=@rteClientId,rte_secret_enc=@rteSecretEnc,updated_at=@now`,
       )
       .run({ ...next, now });
   }

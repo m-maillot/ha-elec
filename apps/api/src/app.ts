@@ -35,16 +35,16 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       throw new Error('APP_SECRET est requis pour enregistrer ou utiliser les secrets');
     return config.appSecret;
   };
-  const configuredHa = (): { url: string; token: string; entityId: string } => {
+  const configuredHa = (): { url: string; token: string; entityIds: [string, string] } => {
     const settings = database.settings();
-    if (!settings.haUrl || !settings.haTokenEnc || !settings.entityId)
+    if (!settings.haUrl || !settings.haTokenEnc || !settings.hpEntityId || !settings.hcEntityId)
       throw new Error(
         'La connexion Home Assistant et l’entité de consommation doivent être configurées',
       );
     return {
       url: settings.haUrl,
       token: decryptSecret(settings.haTokenEnc, requireSecret()),
-      entityId: settings.entityId,
+      entityIds: [settings.hpEntityId, settings.hcEntityId],
     };
   };
   const configuredRte = () => {
@@ -126,7 +126,7 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       const hours = await fetchHourlyConsumption(
         ha.url,
         ha.token,
-        ha.entityId,
+        ha.entityIds,
         `${query.from}T00:00:00+00:00`,
         `${query.to}T23:59:59+00:00`,
       );

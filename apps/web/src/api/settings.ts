@@ -1,10 +1,10 @@
 export interface Settings {
   haUrl: string | null;
-  entityId: string | null;
-  tempoEntityId: string | null;
+  hpEntityId: string | null;
+  hcEntityId: string | null;
   subscribedPowerKva: number;
   currentOption: 'base' | 'hphc' | 'tempo';
-  tempoSource: 'rte' | 'ha' | 'csv';
+  tempoSource: 'rte';
   colorSwitchHour: number;
   rteClientId: string | null;
   haTokenDefined: boolean;
