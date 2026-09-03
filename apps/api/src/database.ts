@@ -14,9 +14,12 @@ export interface SettingsRecord {
   smoothingRefDays: number;
   smoothingSearchWindowDays: number;
   colorSwitchHour: number;
+  rteClientId: string | null;
+  rteSecretEnc: string | null;
 }
-export interface PublicSettings extends Omit<SettingsRecord, 'haTokenEnc'> {
+export interface PublicSettings extends Omit<SettingsRecord, 'haTokenEnc' | 'rteSecretEnc'> {
   haTokenDefined: boolean;
+  rteSecretDefined: boolean;
 }
 export interface HourRow {
   startUtc: string;
@@ -36,6 +39,8 @@ const defaults: SettingsRecord = {
   smoothingRefDays: 3,
   smoothingSearchWindowDays: 14,
   colorSwitchHour: 6,
+  rteClientId: null,
+  rteSecretEnc: null,
 };
 
 export class AppDatabase {
@@ -50,6 +55,13 @@ CREATE TABLE IF NOT EXISTS tariffs (option TEXT PRIMARY KEY, valid_from TEXT, su
 CREATE TABLE IF NOT EXISTS offpeak_ranges (id INTEGER PRIMARY KEY, tariff_set TEXT NOT NULL, start_min INTEGER NOT NULL, end_min INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS consumption_hours (start_utc TEXT PRIMARY KEY, kwh REAL NOT NULL, source_sum REAL, fetched_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tempo_days (date TEXT PRIMARY KEY, color TEXT NOT NULL, source TEXT NOT NULL, fetched_at TEXT NOT NULL);`);
+    for (const column of ['rte_client_id TEXT', 'rte_secret_enc TEXT']) {
+      try {
+        this.db.exec(`ALTER TABLE settings ADD COLUMN ${column}`);
+      } catch {
+        /* migration déjà appliquée */
+      }
+    }
   }
   close(): void {
     this.db.close();
@@ -62,21 +74,25 @@ CREATE TABLE IF NOT EXISTS tempo_days (date TEXT PRIMARY KEY, color TEXT NOT NUL
           `SELECT ha_url AS haUrl,ha_token_enc AS haTokenEnc,entity_id AS entityId,tempo_entity_id AS tempoEntityId,
           subscribed_power_kva AS subscribedPowerKva,tempo_source AS tempoSource,current_option AS currentOption,
           smoothing_ref_days AS smoothingRefDays,smoothing_search_window_days AS smoothingSearchWindowDays,
-          color_switch_hour AS colorSwitchHour FROM settings WHERE id=1`,
+          color_switch_hour AS colorSwitchHour,rte_client_id AS rteClientId,rte_secret_enc AS rteSecretEnc FROM settings WHERE id=1`,
         )
         .get() as Partial<SettingsRecord> | undefined),
     };
   }
   publicSettings(): PublicSettings {
-    const { haTokenEnc, ...settings } = this.settings();
-    return { ...settings, haTokenDefined: Boolean(haTokenEnc) };
+    const { haTokenEnc, rteSecretEnc, ...settings } = this.settings();
+    return {
+      ...settings,
+      haTokenDefined: Boolean(haTokenEnc),
+      rteSecretDefined: Boolean(rteSecretEnc),
+    };
   }
   saveSettings(input: Partial<SettingsRecord>): void {
     const next = { ...this.settings(), ...input };
     const now = new Date().toISOString();
     this.db
       .prepare(
-        `INSERT INTO settings (id,ha_url,ha_token_enc,entity_id,tempo_entity_id,subscribed_power_kva,tempo_source,current_option,smoothing_ref_days,smoothing_search_window_days,color_switch_hour,updated_at) VALUES (1,@haUrl,@haTokenEnc,@entityId,@tempoEntityId,@subscribedPowerKva,@tempoSource,@currentOption,@smoothingRefDays,@smoothingSearchWindowDays,@colorSwitchHour,@now) ON CONFLICT(id) DO UPDATE SET ha_url=@haUrl,ha_token_enc=@haTokenEnc,entity_id=@entityId,tempo_entity_id=@tempoEntityId,subscribed_power_kva=@subscribedPowerKva,tempo_source=@tempoSource,current_option=@currentOption,smoothing_ref_days=@smoothingRefDays,smoothing_search_window_days=@smoothingSearchWindowDays,color_switch_hour=@colorSwitchHour,updated_at=@now`,
+        `INSERT INTO settings (id,ha_url,ha_token_enc,entity_id,tempo_entity_id,subscribed_power_kva,tempo_source,current_option,smoothing_ref_days,smoothing_search_window_days,color_switch_hour,rte_client_id,rte_secret_enc,updated_at) VALUES (1,@haUrl,@haTokenEnc,@entityId,@tempoEntityId,@subscribedPowerKva,@tempoSource,@currentOption,@smoothingRefDays,@smoothingSearchWindowDays,@colorSwitchHour,@rteClientId,@rteSecretEnc,@now) ON CONFLICT(id) DO UPDATE SET ha_url=@haUrl,ha_token_enc=@haTokenEnc,entity_id=@entityId,tempo_entity_id=@tempoEntityId,subscribed_power_kva=@subscribedPowerKva,tempo_source=@tempoSource,current_option=@currentOption,smoothing_ref_days=@smoothingRefDays,smoothing_search_window_days=@smoothingSearchWindowDays,color_switch_hour=@colorSwitchHour,rte_client_id=@rteClientId,rte_secret_enc=@rteSecretEnc,updated_at=@now`,
       )
       .run({ ...next, now });
   }
