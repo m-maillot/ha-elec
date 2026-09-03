@@ -13,6 +13,7 @@ import type { AppConfig } from './config.js';
 import { decryptSecret, encryptSecret } from './crypto.js';
 import { AppDatabase, type SettingsRecord } from './database.js';
 import { fetchHourlyConsumption, testHaConnection } from './home-assistant.js';
+import { fetchRteTempoDays } from './tempo.js';
 
 export const API_VERSION = '0.1.0';
 
@@ -46,6 +47,15 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       entityId: settings.entityId,
     };
   };
+  const configuredRte = () => {
+    const settings = database.settings();
+    if (!settings.rteClientId || !settings.rteSecretEnc)
+      throw new Error('Les identifiants RTE doivent être configurés');
+    return {
+      clientId: settings.rteClientId,
+      secret: decryptSecret(settings.rteSecretEnc, requireSecret()),
+    };
+  };
 
   app.get('/api/health', async () => ({
     status: 'ok' as const,
@@ -58,6 +68,7 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
   app.put('/api/settings', async (request, reply) => {
     const body = request.body as Partial<SettingsRecord> & {
       haToken?: string;
+      rteSecret?: string;
       tariffs?: TariffGrid;
       hphcOffpeakRanges?: OffpeakRange[];
       tempoOffpeakRanges?: OffpeakRange[];
@@ -65,10 +76,14 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
     try {
       if (body.hphcOffpeakRanges) validateOffpeakRanges(body.hphcOffpeakRanges);
       if (body.tempoOffpeakRanges) validateOffpeakRanges(body.tempoOffpeakRanges);
-      const { haToken, tariffs, hphcOffpeakRanges, tempoOffpeakRanges, ...settings } = body;
+      const { haToken, rteSecret, tariffs, hphcOffpeakRanges, tempoOffpeakRanges, ...settings } =
+        body;
       database.saveSettings({
         ...settings,
         ...(haToken === undefined ? {} : { haTokenEnc: encryptSecret(haToken, requireSecret()) }),
+        ...(rteSecret === undefined
+          ? {}
+          : { rteSecretEnc: encryptSecret(rteSecret, requireSecret()) }),
       });
       if (tariffs) database.saveTariffs(tariffs);
       if (hphcOffpeakRanges) database.saveRanges('hphc', hphcOffpeakRanges);
@@ -149,6 +164,22 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       return reply.code(400).send({ error: 'Jours Tempo invalides' });
     database.upsertTempoDays(body.days.map((day) => ({ ...day, source: 'csv' })));
     return { imported: body.days.length };
+  });
+  app.post('/api/tempo/sync', async (request, reply) => {
+    const query = request.query as { from?: string; to?: string };
+    try {
+      if (!query.from || !query.to) throw new Error('from et to sont requis');
+      const rte = configuredRte();
+      const days = await fetchRteTempoDays(rte.clientId, rte.secret, query.from, query.to);
+      database.upsertTempoDays(days.map((day) => ({ ...day, source: 'rte' })));
+      return { syncedDays: days.length, source: 'rte' };
+    } catch (error) {
+      return reply
+        .code(502)
+        .send({
+          error: error instanceof Error ? error.message : 'Synchronisation Tempo impossible',
+        });
+    }
   });
   app.post('/api/simulate', async (request, reply) => {
     const body = request.body as { from?: string; to?: string };
