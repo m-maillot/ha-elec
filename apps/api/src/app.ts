@@ -174,11 +174,9 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
       database.upsertTempoDays(days.map((day) => ({ ...day, source: 'rte' })));
       return { syncedDays: days.length, source: 'rte' };
     } catch (error) {
-      return reply
-        .code(502)
-        .send({
-          error: error instanceof Error ? error.message : 'Synchronisation Tempo impossible',
-        });
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : 'Synchronisation Tempo impossible',
+      });
     }
   });
   app.post('/api/simulate', async (request, reply) => {
