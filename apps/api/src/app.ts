@@ -2,8 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import fastifyStatic from '@fastify/static';
-import { CORE_VERSION } from '@ha-elec/core';
+import {
+  CORE_VERSION,
+  simulate,
+  validateOffpeakRanges,
+  type OffpeakRange,
+  type TariffGrid,
+} from '@ha-elec/core';
 import type { AppConfig } from './config.js';
+import { decryptSecret, encryptSecret } from './crypto.js';
+import { AppDatabase, type SettingsRecord } from './database.js';
+import { fetchHourlyConsumption, testHaConnection } from './home-assistant.js';
 
 export const API_VERSION = '0.1.0';
 
@@ -17,6 +26,26 @@ export interface BuildOptions {
  */
 export async function buildApp({ config, logger = true }: BuildOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger });
+  const database = new AppDatabase(config.dataDir);
+  app.addHook('onClose', () => database.close());
+
+  const requireSecret = (): string => {
+    if (!config.appSecret)
+      throw new Error('APP_SECRET est requis pour enregistrer ou utiliser les secrets');
+    return config.appSecret;
+  };
+  const configuredHa = (): { url: string; token: string; entityId: string } => {
+    const settings = database.settings();
+    if (!settings.haUrl || !settings.haTokenEnc || !settings.entityId)
+      throw new Error(
+        'La connexion Home Assistant et l’entité de consommation doivent être configurées',
+      );
+    return {
+      url: settings.haUrl,
+      token: decryptSecret(settings.haTokenEnc, requireSecret()),
+      entityId: settings.entityId,
+    };
+  };
 
   app.get('/api/health', async () => ({
     status: 'ok' as const,
@@ -24,6 +53,128 @@ export async function buildApp({ config, logger = true }: BuildOptions): Promise
     core: CORE_VERSION,
     time: new Date().toISOString(),
   }));
+
+  app.get('/api/settings', async () => database.publicSettings());
+  app.put('/api/settings', async (request, reply) => {
+    const body = request.body as Partial<SettingsRecord> & {
+      haToken?: string;
+      tariffs?: TariffGrid;
+      hphcOffpeakRanges?: OffpeakRange[];
+      tempoOffpeakRanges?: OffpeakRange[];
+    };
+    try {
+      if (body.hphcOffpeakRanges) validateOffpeakRanges(body.hphcOffpeakRanges);
+      if (body.tempoOffpeakRanges) validateOffpeakRanges(body.tempoOffpeakRanges);
+      const { haToken, tariffs, hphcOffpeakRanges, tempoOffpeakRanges, ...settings } = body;
+      database.saveSettings({
+        ...settings,
+        ...(haToken === undefined ? {} : { haTokenEnc: encryptSecret(haToken, requireSecret()) }),
+      });
+      if (tariffs) database.saveTariffs(tariffs);
+      if (hphcOffpeakRanges) database.saveRanges('hphc', hphcOffpeakRanges);
+      if (tempoOffpeakRanges) database.saveRanges('tempo', tempoOffpeakRanges);
+      return database.publicSettings();
+    } catch (error) {
+      return reply
+        .code(400)
+        .send({ error: error instanceof Error ? error.message : 'Configuration invalide' });
+    }
+  });
+
+  app.post('/api/ha/test', async (request, reply) => {
+    const body = request.body as { url?: string; token?: string };
+    try {
+      if (!body.url || !body.token) throw new Error('URL et token Home Assistant requis');
+      return await testHaConnection(body.url, body.token);
+    } catch (error) {
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : 'Connexion Home Assistant impossible',
+      });
+    }
+  });
+  app.get('/api/ha/entities', async (_request, reply) => {
+    try {
+      const ha = configuredHa();
+      return (await testHaConnection(ha.url, ha.token)).entities;
+    } catch (error) {
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : 'Connexion Home Assistant impossible',
+      });
+    }
+  });
+
+  app.post('/api/data/sync', async (request, reply) => {
+    const query = request.query as { from?: string; to?: string };
+    try {
+      if (!query.from || !query.to) throw new Error('Les paramètres from et to sont requis');
+      const ha = configuredHa();
+      const hours = await fetchHourlyConsumption(
+        ha.url,
+        ha.token,
+        ha.entityId,
+        `${query.from}T00:00:00+00:00`,
+        `${query.to}T23:59:59+00:00`,
+      );
+      database.upsertHours(hours.map((hour) => ({ ...hour, fetchedAt: new Date().toISOString() })));
+      return { syncedHours: hours.length };
+    } catch (error) {
+      return reply.code(502).send({
+        error: error instanceof Error ? error.message : 'Synchronisation Home Assistant impossible',
+      });
+    }
+  });
+
+  app.get('/api/consumption', async (request, reply) => {
+    const query = request.query as { from?: string; to?: string; granularity?: string };
+    if (!query.from || !query.to || (query.granularity && query.granularity !== 'hour'))
+      return reply.code(400).send({ error: 'from, to et granularity=hour sont requis' });
+    return database.hours(query.from, query.to);
+  });
+
+  app.get('/api/tempo/days', async (request, reply) => {
+    const query = request.query as { from?: string; to?: string };
+    if (!query.from || !query.to) return reply.code(400).send({ error: 'from et to sont requis' });
+    return database.tempoDays(query.from, query.to);
+  });
+  app.post('/api/tempo/days', async (request, reply) => {
+    const body = request.body as {
+      days?: Array<{ date: string; color: 'blue' | 'white' | 'red' }>;
+    };
+    if (
+      !body.days?.every(
+        (day) =>
+          /^\d{4}-\d{2}-\d{2}$/.test(day.date) && ['blue', 'white', 'red'].includes(day.color),
+      )
+    )
+      return reply.code(400).send({ error: 'Jours Tempo invalides' });
+    database.upsertTempoDays(body.days.map((day) => ({ ...day, source: 'csv' })));
+    return { imported: body.days.length };
+  });
+  app.post('/api/simulate', async (request, reply) => {
+    const body = request.body as { from?: string; to?: string };
+    try {
+      if (!body.from || !body.to) throw new Error('from et to sont requis');
+      const tariffs = database.tariffs();
+      if (!tariffs) throw new Error('La grille tarifaire est incomplète');
+      const settings = database.settings();
+      return simulate({
+        from: body.from,
+        to: body.to,
+        tariffs,
+        hphcOffpeakRanges: database.ranges('hphc'),
+        tempoOffpeakRanges: database.ranges('tempo'),
+        colorSwitchHour: settings.colorSwitchHour,
+        consumption: database
+          .hours(body.from, body.to)
+          .map((hour) => ({ start: hour.startUtc, kwh: hour.kwh })),
+        tempoDays: database.tempoDays(body.from, body.to),
+      });
+    } catch (error) {
+      return reply
+        .code(400)
+        .send({ error: error instanceof Error ? error.message : 'Simulation impossible' });
+    }
+  });
 
   // Sert le front buildé (image Docker unique, §6.8) avec repli SPA hors /api.
   const indexHtml = config.webDist ? path.join(config.webDist, 'index.html') : null;
