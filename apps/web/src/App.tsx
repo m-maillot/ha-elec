@@ -88,11 +88,11 @@ export function App() {
               />
             </label>
             <label>
-              Entité Tempo (optionnelle)
+              Index heures creuses
               <input
                 className={input}
-                value={(form.tempoEntityId as string) ?? ''}
-                onChange={(e) => set('tempoEntityId', e.target.value)}
+                value={(form.hcEntityId as string) ?? ''}
+                onChange={(e) => set('hcEntityId', e.target.value)}
               />
             </label>
           </div>
