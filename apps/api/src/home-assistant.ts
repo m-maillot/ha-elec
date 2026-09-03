@@ -45,22 +45,39 @@ export async function testHaConnection(
 }
 
 async function listEligibleEntities(connection: HaConnection): Promise<HaEntity[]> {
-  const result = await connection.sendMessagePromise<
-    Record<string, { unit_of_measurement?: string; has_sum?: boolean; name?: string }>
-  >({ type: 'recorder/list_statistic_ids' });
-  return Object.entries(result)
-    .filter(
-      ([, value]) =>
-        value.has_sum &&
-        (value.unit_of_measurement === 'kWh' || value.unit_of_measurement === 'Wh'),
+  const result = await connection.sendMessagePromise<unknown>({
+    type: 'recorder/list_statistic_ids',
+  });
+  const rows = Array.isArray(result)
+    ? result
+    : Array.isArray((result as { statistic_ids?: unknown[] }).statistic_ids)
+      ? (result as { statistic_ids: unknown[] }).statistic_ids
+      : Object.entries(result as Record<string, unknown>).map(([statistic_id, value]) => ({
+          statistic_id,
+          ...(value as object),
+        }));
+  return rows.flatMap((row) => {
+    const value = row as {
+      statistic_id?: string;
+      unit_of_measurement?: string;
+      has_sum?: boolean;
+      name?: string;
+    };
+    if (
+      !value.statistic_id ||
+      !value.has_sum ||
+      (value.unit_of_measurement !== 'kWh' && value.unit_of_measurement !== 'Wh')
     )
-    .map(([entityId, value]) => ({
-      entityId,
-      name: value.name ?? entityId,
-      unit: value.unit_of_measurement as 'kWh' | 'Wh',
-    }));
+      return [];
+    return [
+      {
+        entityId: value.statistic_id,
+        name: value.name ?? value.statistic_id,
+        unit: value.unit_of_measurement,
+      },
+    ];
+  });
 }
-
 export async function fetchHourlyConsumption(
   url: string,
   token: string,
