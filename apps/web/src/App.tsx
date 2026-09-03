@@ -17,6 +17,8 @@ const emptyTariffs = {
 const input = 'mt-1 block w-full rounded border border-slate-300 px-3 py-2';
 export function App() {
   const query = useQuery({ queryKey: ['settings'], queryFn: fetchSettings });
+  const [haTestMessage, setHaTestMessage] = useState<string>();
+  const [rteTestMessage, setRteTestMessage] = useState<string>();
   const [form, setForm] = useState<Record<string, unknown>>({
     tariffs: emptyTariffs,
     hphcOffpeakRanges: [{ startMinute: 1320, endMinute: 360 }],
@@ -111,9 +113,9 @@ export function App() {
                 }),
               });
               const body = (await response.json()) as { error?: string; version?: string };
-              window.alert(
+              setHaTestMessage(
                 response.ok
-                  ? `Connexion Home Assistant réussie`
+                  ? `Connexion Home Assistant réussie (${body.version ?? 'version inconnue'})`
                   : (body.error ?? 'Connexion impossible'),
               );
             }}
@@ -121,6 +123,7 @@ export function App() {
             Tester la connexion
           </button>
         </section>
+        {haTestMessage && <p className="mt-2 text-sm">{haTestMessage}</p>}
         <section className="rounded-lg border p-5">
           <h2 className="text-xl font-medium">Tarifs et puissance</h2>
           <label className="mt-3 block">
@@ -221,8 +224,8 @@ export function App() {
               className="mt-3 rounded border px-3 py-2"
               onClick={async () => {
                 const response = await fetch('/api/tempo/test', { method: 'POST' });
-                const body = (await response.json()) as { error?: string; days?: unknown[] };
-                window.alert(
+                const body = (await response.json()) as { error?: string };
+                setRteTestMessage(
                   response.ok
                     ? 'Connexion RTE réussie'
                     : (body.error ?? 'Connexion RTE impossible'),
@@ -235,6 +238,7 @@ export function App() {
         </section>
         {mutation.isError && <p className="text-red-700">{mutation.error.message}</p>}
         {mutation.isSuccess && <p className="text-green-700">Configuration enregistrée.</p>}
+        {rteTestMessage && <p className="mt-2 text-sm">{rteTestMessage}</p>}
         <button
           className="rounded bg-slate-900 px-4 py-2 font-medium text-white"
           disabled={mutation.isPending}
